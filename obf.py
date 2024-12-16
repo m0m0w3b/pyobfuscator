@@ -5,7 +5,6 @@ import base64
 import string
 import random
 import argparse
-import marshal
 
 class PyObfuscator:
     def __init__(self, code: str, include_imports: bool = False, recursion: int = 1) -> None:
@@ -27,8 +26,7 @@ class PyObfuscator:
         for _ in range(self.__recursion):
             self._layer_1()
             self._layer_2()
-            self._layer_3()
-            self._layer_4()
+            self._layer_3()  # Add layer 3 obfuscation
 
         if self.__include_imports:
             self._prepend_imports()
@@ -162,29 +160,6 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
             raise
 
         self._insert_dummy_comments()
-
-    def _layer_4(self) -> None:
-        """Layer 4: Obfuscation with marshal, zlib, and base64."""
-        layer = r"""
-import marshal
-exec(marshal.loads(__import__("zlib").decompress(__import__("base64").b64decode(b"{encoded_code}"))))
-"""
-        try:
-            marshaled_code = marshal.dumps(compile(self._code, "<string>", "exec"))
-
-            compressed_code = zlib.compress(marshaled_code)
-
-            encoded_code = base64.b64encode(compressed_code).decode()
-        except Exception as e:
-            raise RuntimeError(f"Error during obfuscation in _layer_4: {e}")
-
-        self._code = layer.replace("{encoded_code}", encoded_code)
-
-        try:
-            test_exec = marshal.loads(zlib.decompress(base64.b64decode(encoded_code)))
-            assert isinstance(test_exec, type(compile("", "", "exec"))), "Validation failed: Code is not executable"
-        except Exception as e:
-            raise RuntimeError(f"Validation failed for layer 4: {e}")
 
 
     def _generate_random_name(self) -> str:
