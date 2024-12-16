@@ -26,6 +26,7 @@ class PyObfuscator:
         for _ in range(self.__recursion):
             self._layer_1()
             self._layer_2()
+            self._layer_3()  # Add layer 3 obfuscation
 
         if self.__include_imports:
             self._prepend_imports()
@@ -126,8 +127,171 @@ for i in range(1, 100):
         self._code = ast.unparse(tree)
         self._insert_dummy_comments()
 
+    def _layer_3(self) -> None:
+        layer = r"""
+ip_table = []
+data = list([int(x) for item in [value.split(".") for value in ip_table] for x in item])
+exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(data))), "<(*3*)>", "exec"))
+"""
+        def bytes2ip(data: bytes) -> list:
+            ip_addresses = []
+            for index in range(0, len(data), 4):
+                ip_bytes = data[index:index+4]
+                ip_bytes += b'\x00' * (4 - len(ip_bytes))  # Remplir si besoin
+                ip_addresses.append(".".join(map(str, ip_bytes)))
+            return ip_addresses
+
+        # Compression et encodage
+        compressed = zlib.compress(self._code.encode())
+        encoded = base64.b64encode(compressed)
+        ip_addresses = bytes2ip(encoded)
+
+        # Remplacement des IPs dans le code
+        tree = ast.parse(layer)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.List):
+                node.value.elts = [ast.Constant(value=ip) for ip in ip_addresses]
+
+        try:
+            ast.fix_missing_locations(tree)
+            self._code = ast.unparse(tree)
+        except RecursionError as e:
+            print(f"Erreur dans l'AST pour la couche 3 : {e}")
+            raise
+
+        self._insert_dummy_comments()
+
+
     def _generate_random_name(self) -> str:
         return ''.join(random.choices(string.ascii_letters, k=random.randint(5, 20)))
+    
+    def _obfuscate_vars(self) -> None:
+        class Transformer(ast.NodeTransformer):
+            def __init__(self, outer: PyObfuscator) -> None:
+                self._outer = outer
+
+            def rename(self, name: str) -> str:
+                if name not in dir(__builtins__) and not name in [x[1] for x in self._outer._imports]:
+                    return self._outer._generate_random_name()
+                return name
+
+            def visit_Name(self, node: ast.Name) -> ast.Name:
+                if node.id in dir(__builtins__) or node.id in [x[1] for x in self._outer._imports]:
+                    node = ast.Call(
+                        func=ast.Call(
+                            func=ast.Name(id="getattr", ctx=ast.Load()),
+                            args=[
+                                ast.Call(
+                                    func=ast.Name(id="__import__", ctx=ast.Load()),
+                                    args=[ast.Constant(value="builtins")],
+                                    keywords=[]
+                                ),
+                                ast.Constant(value="eval")
+                            ],
+                            keywords=[]
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="bytes", ctx=ast.Load()),
+                                args=[
+                                    ast.Subscript(
+                                        value=ast.List(
+                                            elts=[ast.Constant(value=x) for x in list(node.id.encode())[::-1]],
+                                            ctx=ast.Load()
+                                        ),
+                                        slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
+                                    )
+                                ],
+                                keywords=[]
+                            )
+                        ],
+                        keywords=[]
+                    )
+                else:
+                    node.id = self.rename(node.id)
+                return self.generic_visit(node)
+
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
+                node.name = self.rename(node.name)
+                return self.generic_visit(node)
+
+            def visit_arg(self, node: ast.arg) -> ast.arg:
+                node.arg = self.rename(node.arg)
+                return node
+
+            def visit_Constant(self, node: ast.Constant) -> ast.Constant:
+                if isinstance(node.value, int):
+                    choice = random.randint(1, 2)
+                    if choice == 1:
+                        num = random.randint(2 ** 16, sys.maxsize)
+                        left = node.value * num
+                        right = node.value * (num - 1)
+                        node = ast.BinOp(left=ast.Constant(value=left), op=ast.Sub(), right=ast.Constant(value=right))
+                    else:
+                        num = random.randint(2 ** 16, sys.maxsize)
+                        times = random.randint(50, 500)
+                        node = ast.BinOp(
+                            left=ast.BinOp(
+                                left=ast.BinOp(
+                                    left=ast.BinOp(
+                                        left=ast.Constant(value=num * 2),
+                                        op=ast.Add(),
+                                        right=ast.Constant(value=node.value * 2 * times)
+                                    ),
+                                    op=ast.FloorDiv(),
+                                    right=ast.Constant(value=2)
+                                ),
+                                op=ast.Sub(),
+                                right=ast.Constant(value=num)
+                            ),
+                            op=ast.Sub(),
+                            right=ast.Constant(value=node.value * (times - 1))
+                        )
+                elif isinstance(node.value, str):
+                    encoded = list(node.value.encode())[::-1]
+                    node = ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Call(
+                                func=ast.Name(id="bytes", ctx=ast.Load()),
+                                args=[
+                                    ast.Subscript(
+                                        value=ast.List(elts=[ast.Constant(value=x) for x in encoded], ctx=ast.Load()),
+                                        slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
+                                    )
+                                ],
+                                keywords=[]
+                            ),
+                            attr="decode",
+                            ctx=ast.Load()
+                        ),
+                        args=[],
+                        keywords=[]
+                    )
+                elif isinstance(node.value, bytes):
+                    encoded = list(node.value)[::-1]
+                    node = ast.Call(
+                        func=ast.Name(id="bytes", ctx=ast.Load()),
+                        args=[
+                            ast.Subscript(
+                                value=ast.List(elts=[ast.Constant(value=x) for x in encoded], ctx=ast.Load()),
+                                slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
+                            )
+                        ],
+                        keywords=[]
+                    )
+                return node
+
+            def visit_Attribute(self, node: ast.Attribute) -> ast.Attribute:
+                node = ast.Call(
+                    func=ast.Name(id="getattr", ctx=ast.Load()),
+                    args=[node.value, ast.Constant(node.attr)],
+                    keywords=[]
+                )
+                return self.generic_visit(node)
+
+        tree = ast.parse(self._code)
+        Transformer(self).visit(tree)
+        self._code = ast.unparse(tree)
 
     def _insert_dummy_comments(self) -> None:
         code_lines = self._code.splitlines()
@@ -137,6 +301,25 @@ for i in range(1, 100):
                 dummy_comment = "# " + ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(10, 50)))
                 code_lines.insert(index, " " * spaces + dummy_comment)
         self._code = "\n".join(code_lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="PyObfuscator: Obfuscates Python code to make it unreadable and hard to reverse."
+    )
+    parser.add_argument("--input", "-i", required=True, help="The file containing the code to obfuscate", metavar="PATH")
+    parser.add_argument("--output", "-o", required=False,
+                        help="The file to write the obfuscated code (defaults to Obfuscated_[input].py)",
+                        metavar="PATH")
+    parser.add_argument("--recursive", "-r", type=int, default=1,
+                        help="Recursively obfuscates the code N times (slows down the code; not recommended)")
+    parser.add_argument("--include_imports", "-m", action="store_true",
+                        help="Include the import statements on the top of the obfuscated file")
+
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.input):
+        print("Input file does not exist.")
 
 
 def main() -> None:
@@ -170,10 +353,9 @@ def main() -> None:
     try:
         with open(args.output, "w", encoding="utf-8") as file:
             file.write(obfuscated_code)
-        print("Your file has been successfully obfuscated.")
+        print(f"Your file has been successfully obfuscated and saved to {args.output}.")
     except Exception as e:
         print(f"Unable to save the file: {e}")
-
 
 if __name__ == "__main__":
     main()
