@@ -5,6 +5,7 @@ import base64
 import string
 import random
 import argparse
+import sys
 
 class PyObfuscator:
     def __init__(self, code: str, include_imports: bool = False, recursion: int = 1) -> None:
@@ -161,10 +162,9 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
 
         self._insert_dummy_comments()
 
-
     def _generate_random_name(self) -> str:
         return ''.join(random.choices(string.ascii_letters, k=random.randint(5, 20)))
-    
+
     def _obfuscate_vars(self) -> None:
         class Transformer(ast.NodeTransformer):
             def __init__(self, outer: PyObfuscator) -> None:
@@ -180,31 +180,25 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
                     node = ast.Call(
                         func=ast.Call(
                             func=ast.Name(id="getattr", ctx=ast.Load()),
-                            args=[
-                                ast.Call(
-                                    func=ast.Name(id="__import__", ctx=ast.Load()),
-                                    args=[ast.Constant(value="builtins")],
-                                    keywords=[]
-                                ),
-                                ast.Constant(value="eval")
-                            ],
+                            args=[ast.Call(
+                                func=ast.Name(id="__import__", ctx=ast.Load()),
+                                args=[ast.Constant(value="builtins")],
+                                keywords=[]
+                            ),
+                            ast.Constant(value="eval")],
                             keywords=[]
                         ),
-                        args=[
-                            ast.Call(
-                                func=ast.Name(id="bytes", ctx=ast.Load()),
-                                args=[
-                                    ast.Subscript(
-                                        value=ast.List(
-                                            elts=[ast.Constant(value=x) for x in list(node.id.encode())[::-1]],
-                                            ctx=ast.Load()
-                                        ),
-                                        slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
-                                    )
-                                ],
-                                keywords=[]
-                            )
-                        ],
+                        args=[ast.Call(
+                            func=ast.Name(id="bytes", ctx=ast.Load()),
+                            args=[ast.Subscript(
+                                value=ast.List(
+                                    elts=[ast.Constant(value=x) for x in list(node.id.encode())[::-1]],
+                                    ctx=ast.Load()
+                                ),
+                                slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
+                            )],
+                            keywords=[]
+                        )],
                         keywords=[]
                     )
                 else:
@@ -230,55 +224,8 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
                     else:
                         num = random.randint(2 ** 16, sys.maxsize)
                         times = random.randint(50, 500)
-                        node = ast.BinOp(
-                            left=ast.BinOp(
-                                left=ast.BinOp(
-                                    left=ast.BinOp(
-                                        left=ast.Constant(value=num * 2),
-                                        op=ast.Add(),
-                                        right=ast.Constant(value=node.value * 2 * times)
-                                    ),
-                                    op=ast.FloorDiv(),
-                                    right=ast.Constant(value=2)
-                                ),
-                                op=ast.Sub(),
-                                right=ast.Constant(value=num)
-                            ),
-                            op=ast.Sub(),
-                            right=ast.Constant(value=node.value * (times - 1))
-                        )
-                elif isinstance(node.value, str):
-                    encoded = list(node.value.encode())[::-1]
-                    node = ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Call(
-                                func=ast.Name(id="bytes", ctx=ast.Load()),
-                                args=[
-                                    ast.Subscript(
-                                        value=ast.List(elts=[ast.Constant(value=x) for x in encoded], ctx=ast.Load()),
-                                        slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
-                                    )
-                                ],
-                                keywords=[]
-                            ),
-                            attr="decode",
-                            ctx=ast.Load()
-                        ),
-                        args=[],
-                        keywords=[]
-                    )
-                elif isinstance(node.value, bytes):
-                    encoded = list(node.value)[::-1]
-                    node = ast.Call(
-                        func=ast.Name(id="bytes", ctx=ast.Load()),
-                        args=[
-                            ast.Subscript(
-                                value=ast.List(elts=[ast.Constant(value=x) for x in encoded], ctx=ast.Load()),
-                                slice=ast.Slice(lower=None, upper=None, step=ast.Constant(value=-1))
-                            )
-                        ],
-                        keywords=[]
-                    )
+                        node.value = times
+                        node = ast.BinOp(left=ast.Constant(value=node.value), op=ast.Mult(), right=ast.Constant(value=num))
                 return node
 
             def visit_Attribute(self, node: ast.Attribute) -> ast.Attribute:
@@ -289,40 +236,20 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
                 )
                 return self.generic_visit(node)
 
-        tree = ast.parse(self._code)
-        Transformer(self).visit(tree)
-        self._code = ast.unparse(tree)
+        transformer = Transformer(self)
+        self._code = transformer.visit(ast.parse(self._code))
 
     def _insert_dummy_comments(self) -> None:
         code_lines = self._code.splitlines()
         for index in range(len(code_lines) - 1, 0, -1):
-            if random.randint(1, 10) > 7:
+            if random.randint(1, 10) > 7:  # Random chance to add dummy comments
                 spaces = len(code_lines[index]) - len(code_lines[index].lstrip())
                 dummy_comment = "# " + ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(10, 50)))
                 code_lines.insert(index, " " * spaces + dummy_comment)
         self._code = "\n".join(code_lines)
 
-
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="PyObfuscator: Obfuscates Python code to make it unreadable and hard to reverse."
-    )
-    parser.add_argument("--input", "-i", required=True, help="The file containing the code to obfuscate", metavar="PATH")
-    parser.add_argument("--output", "-o", required=False,
-                        help="The file to write the obfuscated code (defaults to Obfuscated_[input].py)",
-                        metavar="PATH")
-    parser.add_argument("--recursive", "-r", type=int, default=1,
-                        help="Recursively obfuscates the code N times (slows down the code; not recommended)")
-    parser.add_argument("--include_imports", "-m", action="store_true",
-                        help="Include the import statements on the top of the obfuscated file")
-
-    args = parser.parse_args()
-
-    if not os.path.isfile(args.input):
-        print("Input file does not exist.")
-
-
-def main() -> None:
+    # Command-line interface for the script
     parser = argparse.ArgumentParser(
         description="PyObfuscator: Obfuscates Python code to make it unreadable and hard to reverse."
     )
@@ -344,12 +271,15 @@ def main() -> None:
     if not args.output:
         args.output = f"Obfuscated_{os.path.basename(args.input)}"
 
+    # Read the input file
     with open(args.input, "r", encoding="utf-8") as file:
         contents = file.read()
 
+    # Create the obfuscator object and obfuscate the code
     obfuscator = PyObfuscator(contents, args.include_imports, args.recursive)
     obfuscated_code = obfuscator.obfuscate()
 
+    # Write the obfuscated code to the output file
     try:
         with open(args.output, "w", encoding="utf-8") as file:
             file.write(obfuscated_code)
