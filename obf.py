@@ -6,6 +6,9 @@ import string
 import random
 import argparse
 import sys
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 
 class PyObfuscator:
     def __init__(self, code: str, include_imports: bool = False, recursion: int = 1) -> None:
@@ -219,11 +222,10 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
                     if choice == 1:
                         num = random.randint(2 ** 16, sys.maxsize)
                         left = node.value * num
-                        right = node.value * (num - 1)
-                        node = ast.BinOp(left=ast.Constant(value=left), op=ast.Sub(), right=ast.Constant(value=right))
+                        right = node.value * random.randint(2 ** 16, sys.maxsize)
+                        node.value = left * right
                     else:
-                        num = random.randint(2 ** 16, sys.maxsize)
-                        times = random.randint(50, 500)
+                        times = random.randint(2 ** 10, 2 ** 30)
                         node.value = times
                         node = ast.BinOp(left=ast.Constant(value=node.value), op=ast.Mult(), right=ast.Constant(value=num))
                 return node
