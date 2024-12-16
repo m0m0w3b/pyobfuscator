@@ -9,6 +9,7 @@ import sys
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+import lzma  # Ajout de la bibliothèque LZMA pour la compression avancée
 
 class PyObfuscator:
     def __init__(self, code: str, include_imports: bool = False, recursion: int = 1) -> None:
@@ -78,7 +79,7 @@ class PyObfuscator:
 exec(__import__("zlib").decompress(__import__("base64").b64decode({v1} + {v2} + {v3} + {v4})))
 """
 
-        compressed = zlib.compress(self._code.encode())
+        compressed = lzma.compress(self._code.encode())  # Utilisation de LZMA pour la compression avancée
         encoded = base64.b64encode(compressed).decode()
 
         # Divide the encoded string into 4 parts
@@ -113,7 +114,7 @@ for i in range(1, 100):
         in_byte = random.randbytes(1)
         re_byte = in_byte[0] ^ key
 
-        encrypted = list(map(lambda x: key ^ x, zlib.compress(self._code.encode())))
+        encrypted = list(map(lambda x: key ^ x, lzma.compress(self._code.encode())))  # Utilisation de LZMA pour la compression
 
         in_loc = random.randint(0, int(len(encrypted)/2))
         re_loc = random.randint(in_loc, len(encrypted) - 1)
@@ -146,7 +147,7 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
             return ip_addresses
 
         # Compression et encodage
-        compressed = zlib.compress(self._code.encode())
+        compressed = lzma.compress(self._code.encode())  # Compression LZMA
         encoded = base64.b64encode(compressed)
         ip_addresses = bytes2ip(encoded)
 
@@ -218,25 +219,8 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
 
             def visit_Constant(self, node: ast.Constant) -> ast.Constant:
                 if isinstance(node.value, int):
-                    choice = random.randint(1, 2)
-                    if choice == 1:
-                        num = random.randint(2 ** 16, sys.maxsize)
-                        left = node.value * num
-                        right = node.value * random.randint(2 ** 16, sys.maxsize)
-                        node.value = left * right
-                    else:
-                        times = random.randint(2 ** 10, 2 ** 30)
-                        node.value = times
-                        node = ast.BinOp(left=ast.Constant(value=node.value), op=ast.Mult(), right=ast.Constant(value=num))
+                    node.value = random.randint(2**16, sys.maxsize)
                 return node
-
-            def visit_Attribute(self, node: ast.Attribute) -> ast.Attribute:
-                node = ast.Call(
-                    func=ast.Name(id="getattr", ctx=ast.Load()),
-                    args=[node.value, ast.Constant(node.attr)],
-                    keywords=[]
-                )
-                return self.generic_visit(node)
 
         transformer = Transformer(self)
         self._code = transformer.visit(ast.parse(self._code))
@@ -251,18 +235,11 @@ exec(compile(__import__("zlib").decompress(__import__("base64").b64decode(bytes(
         self._code = "\n".join(code_lines)
 
 def main() -> None:
-    # Command-line interface for the script
-    parser = argparse.ArgumentParser(
-        description="PyObfuscator: Obfuscates Python code to make it unreadable and hard to reverse."
-    )
+    parser = argparse.ArgumentParser(description="PyObfuscator: Obfuscates Python code to make it unreadable and hard to reverse.")
     parser.add_argument("--input", "-i", required=True, help="The file containing the code to obfuscate", metavar="PATH")
-    parser.add_argument("--output", "-o", required=False,
-                        help="The file to write the obfuscated code (defaults to Obfuscated_[input].py)",
-                        metavar="PATH")
-    parser.add_argument("--recursive", "-r", type=int, default=1,
-                        help="Recursively obfuscates the code N times (slows down the code; not recommended)")
-    parser.add_argument("--include_imports", "-m", action="store_true",
-                        help="Include the import statements on the top of the obfuscated file")
+    parser.add_argument("--output", "-o", required=False, help="The file to write the obfuscated code (defaults to Obfuscated_[input].py)", metavar="PATH")
+    parser.add_argument("--recursive", "-r", type=int, default=1, help="Recursively obfuscates the code N times (slows down the code; not recommended)")
+    parser.add_argument("--include_imports", "-m", action="store_true", help="Include the import statements on the top of the obfuscated file")
 
     args = parser.parse_args()
 
@@ -273,15 +250,12 @@ def main() -> None:
     if not args.output:
         args.output = f"Obfuscated_{os.path.basename(args.input)}"
 
-    # Read the input file
     with open(args.input, "r", encoding="utf-8") as file:
         contents = file.read()
 
-    # Create the obfuscator object and obfuscate the code
     obfuscator = PyObfuscator(contents, args.include_imports, args.recursive)
     obfuscated_code = obfuscator.obfuscate()
 
-    # Write the obfuscated code to the output file
     try:
         with open(args.output, "w", encoding="utf-8") as file:
             file.write(obfuscated_code)
