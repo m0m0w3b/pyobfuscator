@@ -187,7 +187,6 @@ exec(compile(__import__('zlib').decompress(__import__('base64').b64decode(bytes(
         self._insert_dummy_comments()
 
     def _layer_4(self) -> None:
-        
         """Obfuscation layer using marshal, zlib, and base64."""
         layer = """
 import marshal
@@ -252,7 +251,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        with open(args.input_file, "r") as f:
+        with open(args.input_file, "r", encoding="utf-8") as f:
             code = f.read()
     except Exception as e:
         print(f"Error reading input file: {e}")
@@ -262,13 +261,12 @@ def main():
     obfuscated_code = obfuscator.obfuscate()
 
     try:
-        with open(args.output_file, "w") as f:
+        with open(args.output_file, "w", encoding="utf-8") as f:
             f.write(obfuscated_code)
         print(f"Obfuscated file saved to {args.output_file}")
     except Exception as e:
         print(f"Error saving output file: {e}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
